@@ -8,7 +8,7 @@ from esys.escript import *
 from esys.escript.minimizer import CostFunction, MinimizerException
 from .tools import PoissonEquationZeroMean
 
-from .tools import setupERTPDE, getSourcePotentials, makeMaskForOuterSurface, getAdditivePotentials, getSecondaryPotentials, DataMisfitQuad, DataMisfitLog
+from .tools import setupERTPDE, getSourcePotentials, makeMaskForOuterSurface, getAdditivePotentials, getSecondaryIPPotentials, DataMisfitQuad, DataMisfitLog
 import logging
 import numpy as np
 from esys.escript.pdetools import Locator,  ArithmeticTuple
@@ -260,11 +260,11 @@ class IPMisfitCostFunction(CostFunction):
                                                for iA in additive_potentials_DC}
 
 
-        secondary_potentials_IP = getSecondaryPotentials(self.IP_pde, sigma_oo,
-                                                Mn, source_potential=self.source_potential,
-                                                additive_potential_DC=additive_potentials_DC,
-                                                src_potential_scale_DC= src_potential_scale_DC,
-                                                logger=self.logger)
+        secondary_potentials_IP = getSecondaryIPPotentials(self.IP_pde, sigma_oo,
+                                                           Mn, source_potential=self.source_potential,
+                                                           additive_potential_DC=additive_potentials_DC,
+                                                           src_potential_scale_DC= src_potential_scale_DC,
+                                                           logger=self.logger)
         secondary_potentials_IP_stations = {iA : self.grabValuesAtStations(secondary_potentials_IP[iA])
                                     for iA in secondary_potentials_IP}
 

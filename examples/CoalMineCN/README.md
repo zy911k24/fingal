@@ -9,7 +9,7 @@ There are two
 
 Generate mesh form `mine3D.geo:`
 
-    ./mkMesh
+    ./mkMesh.py
 
 This read `stations.csv`, renerates a mesh file `mine.msh` using `gmsh` and 
 converts the mesh file `mine.fly` in `fly` format. 

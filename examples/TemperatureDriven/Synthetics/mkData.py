@@ -1,10 +1,20 @@
 #!/usr/bin/python3
+import sys
+
+try:
+    from mpi4py import MPI
+    comm = MPI.COMM_WORLD
+    if comm.Get_size() < 1 :
+        raise ValueError("This runs on single node only.")
+except ImportError:
+    pass
 from esys.escript import *
 from esys.finley import ReadGmsh
 from fingal import readElectrodeLocations, readSurveyData, ConductivityModelByTemperature, IPSynthetic, makeMaskForOuterSurface, setupERTPDE
 from esys.weipa import saveVTK, saveSilo
 from esys.escript.linearPDEs import LinearSinglePDE, SolverOptions
-from esys.escript.pdetools import MaskFromTag, Locator
+from esys.escript.pdetools import MaskFromTag, Locator, MaskFromBoundaryTag
+
 import numpy as np
 import argparse
 import importlib
@@ -13,14 +23,14 @@ import subprocess
 
 parser = argparse.ArgumentParser(description='generates a data file from temperature distribution.', epilog="version 3/2024")
 parser.add_argument(dest='config', metavar='configfile', type=str, help='python setting configuration')
-parser.add_argument('--coredepth', '-d',  dest='coredepth', type=int, default=45, help="core depth relative to core width around core in %% of electrode area size (default 45)")
+parser.add_argument('--coredepth', '-d',  dest='coredepth', type=int, default=35, help="core depth relative to core width around core in %% of electrode area size (default 35)")
 parser.add_argument('--extracore', '-e',  dest='extracore', type=int, default=20, help="relative extracore padding within the core around electrodes in %%  of edge legth (default 20)")
-parser.add_argument('--padding', '-p',  dest='padding', type=int, default=150, help="relative padding around core in %% of core eddge length (default 150)")
-parser.add_argument('--coremeshfactor', '-C',  dest='coremeshfactor', type=float, default=1., help="refinement factor of mesh in core relative to the electrode distance (default 0.1)")
+parser.add_argument('--padding', '-p',  dest='padding', type=int, default=1100, help="relative padding around core in %% of core edge length (default 1100)")
+parser.add_argument('--coremeshfactor', '-C',  dest='coremeshfactor', type=float, default=0.5, help="refinement factor of mesh in core relative to the electrode distance (default 0.5)")
 parser.add_argument('--stationmeshfactor', '-s',  dest='stationmeshfactor', type=float, default=0.3, help="refinement factor of mesh near stations relative to their distance (default 0.3)")
 parser.add_argument('--paddingmesh', '-P',  dest='paddingmesh', type=float, default=20, help="number of element on the longest edge of the padding region (default 20)")
 parser.add_argument('--geofile', '-g',  dest='geofile', type=str, default="truedomain", help="name of gmsh geofile to generate")
-parser.add_argument('--noTrueMesh', '-N',  dest='noTrueMesh', action='store_true', default=False, help="if set only gmsh geo file is generated but mesh generation is not started. Useful for debugging.")
+parser.add_argument('--haveMesh', '-M',  dest='haveMesh', action='store_true', default=False, help="if set mesh generation is not started. Useful for debugging.")
 parser.add_argument('--silofile', '-o', dest='silofile', metavar='SILOFILE', type=str, default='truemodel', help='name of silo output file (generated)')
 parser.add_argument('--noise', '-n', dest='noise', metavar='NOISE', type=float, default=0, help='%% of noise added to data.')
 #parser.add_argument('--conductiveSurface', '-c',  dest='conductiveSurface', action='store_true', default=False, help="use conductive surface. Otherwise surface temperature is fixed.")
@@ -35,9 +45,10 @@ GEOFILE = args.geofile + ".geo"
 #=====================
 T_air=15  # air temperature in celcius!
 K = 1.
-q_bottom=config.surfacetemperature_gradient * K
-h_top=0.1 # convective heat transfer coefficient in  W/m/K
-Q_volcano = 1e-1 # heatsource of volcane W/m^3/K
+temperature_gradient = 0.03  # = 30K/km
+q_bottom= temperature_gradient * K
+h_top=0.05 # convective heat transfer coefficient in  W/m/K
+Q_volcano = 0.15# heatsource of volcane W/m^3/K
 #===========================================
 
 
@@ -67,7 +78,7 @@ print("x range = ", xmin, xmax)
 print("y range = ", ymin, ymax)
 print("DistanceElectrodes = ", DistanceElectrodes)
 
-if not args.noTrueMesh:
+if not args.haveMesh:
 
     diagonalAreaOfElectrodes = ((xmax - xmin) ** 2 + (ymax - ymin) ** 2) ** 0.5
     assert diagonalAreaOfElectrodes > 0., "area of electrodes is zero."
@@ -116,7 +127,7 @@ if not args.noTrueMesh:
     out += "meshSizeBB = %g/%d;\n" % (max(xmax - xmin + 2 * XextensionCore + 2 * Xpadding, ymax - ymin + 2 * YextensionCore + 2 * Ypadding),
     args.paddingmesh)
     out += "meshSizeElectrodes = DistanceElectrodes * %s;\n" % (args.stationmeshfactor)
-    out += "meshSizeConduit = meshSizeCore /2 ;\n"
+    out += "meshSizeConduit = meshSizeCore;\n"
 
     GEOTEMPLATE=open("truegeo_template.geo", 'r').read()
 
@@ -167,10 +178,9 @@ pde.setValue(Y=Q)
 
 T=pde.getSolution()
 
-saveSilo("temperature", T=T)
+saveSilo("temperature", T=T, flux =  -grad(T))
 del pde
 # save surface temperature to file:
-1/0
 if False:
     T_surf= 15
     T_bottom = 20
@@ -207,10 +217,6 @@ iT=interpolate(T, Function(domain))
 sigma0=conductivity_model.getDCConductivity(T=iT)
 Mn=conductivity_model.getChargeability(T=iT)
 
-iT_faces=interpolate(T, FunctionOnBoundary(domain))
-sigma0_faces=conductivity_model.getDCConductivity(T=iT_faces)
-Mn_faces=conductivity_model.getChargeability(T=iT_faces)
-
 loc=Locator(T.getFunctionSpace(),  [ survey.getStationLocation(s) for s in survey.getStationNumeration()] )
 iT_at_stations = np.array(loc(T))
 sigma0_at_stations=conductivity_model.getDCConductivity(T=iT_at_stations)
@@ -218,21 +224,19 @@ Mn_at_stations=conductivity_model.getChargeability(T=iT_at_stations)
 
 
 print("sigma0 = ",str(sigma0))
-print("sigma0_faces = ",str(sigma0_faces))
-print("Mn_faces = ",str(Mn_faces))
+print("sigma0_at_stations = ",str(sigma0_at_stations))
 print("Mn = ",str(Mn))
-
+print("Mn_at_stations = ",str(Mn_at_stations))
 # -----------------------------------------------------------------------------------
 tag_faces = ['SurfaceBottom', 'VerticalFaces']
+mask_zero_potential = MaskFromBoundaryTag(domain, *tuple(tag_faces) )
 runner=IPSynthetic(domain, survey,  sigma_src=config.sigma_ref,
-                    mask_faces = makeMaskForOuterSurface(domain, taglist=tag_faces),
+                    maskZeroPotential = mask_zero_potential,
                     stationsFMT=config.stationsFMT,
                     createSecondaryData=True,
                     createFieldData=False,  printInfo = True)
-runner.mask_faces.expand()
 
-runner.setProperties(sigma_0=sigma0, sigma_0_faces=sigma0_faces,
-                     M_n=Mn, M_n_faces=Mn_faces,
+runner.setProperties(sigma_0=sigma0, M_n=Mn,
                      sigma_0_at_stations=sigma0_at_stations, M_n_at_stations = Mn_at_stations)
 
 runner.write(config.datafile , datacolumns = config.datacolumns, addNoise = args.noise>0,
@@ -241,16 +245,13 @@ runner.write(config.datafile , datacolumns = config.datacolumns, addNoise = args
                             iFMT="%d", dFMT="%.5g", xFMT="%e")
 # -----------------------------------------------------------------------------------
 if args.silofile:
-    kwargs = { "Mn" : Mn, "sigma0" : sigma0, "tag" : makeTagMap(Function(domain)) }
+    kwargs = { "Mn" : Mn, "sigma0" : sigma0, "eta" : Mn/(Mn+sigma0), "tag" : makeTagMap(Function(domain)) }
     A=list(elocations.keys())[0]
     iA=survey.getStationNumber(A)
-    kwargs[f'VS_s{A}'] = runner.source_potential[iA]
-    kwargs[f'dV0_s{A}'] = runner.potential_0[iA]
-    kwargs[f'V0_s{A}'] = runner.potential_0[iA] + runner.source_potential[iA]
-    kwargs[f'V2_s{A}'] = runner.potential_0[iA]-runner.potential_oo[iA]
+    kwargs[f'V0{A}'] = runner.potential_0[iA]
+    kwargs[f'V2{A}'] = runner.potential_0[iA]-runner.potential_oo[iA]
+    kwargs[f'ETA{A}'] = kwargs[f'V2{A}']/kwargs[f'V0{A}']
     if runner.createFieldData:
-        kwargs[f'ES_s{A}'] = runner.source_field[iA]
-        kwargs[f'dE0_s{A}'] = runner.field_0[iA]
         kwargs[f'E0_s{A}'] = runner.field_0[iA] + runner.source_field[iA]
         kwargs[f'E2_s{A}'] = runner.field_0[iA] - runner.field_oo[iA]
     saveSilo(args.silofile , **kwargs)

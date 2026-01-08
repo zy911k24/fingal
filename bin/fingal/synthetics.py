@@ -80,9 +80,9 @@ class IPSynthetic(object):
             print("sigma_0 = ", str(sigma_0) )
 
         # -div(sigma_src/alpha_A grad(U_A*alpha_A))=S_A
-        # U_S = injection potential
-        # secondary potential -div(sigma_0 grad(V_0) = -div( (sigma_src/alpha_A - sigma_0) grad(U_A*alpha_A))
-        #  DC potenential V_0 = W_A + U_A*alpha_A)
+        # U_A = source potential
+        # additive potential V_0: -div(sigma_0 grad(V_0) = -div( (sigma_src/alpha_A - sigma_0) grad(U_A*alpha_A))
+        #  the DC potential V_0 = W_A + U_A*alpha_A)
         pde = setupERTPDE(self.domain)
         pde.setValue(q=self.maskZeroPotential)
         if sigma_0_at_stations is None:
@@ -105,7 +105,7 @@ class IPSynthetic(object):
                 print(str(len(self.field_0)) + " DC fields calculated.")
 
         if self.createSecondaryData:
-            # secondary potential -div(sigma_oo grad(V_2) = -div((sigma_src-sigma_oo) grad(V_s))
+            # secondary potential -div(sigma_oo grad(V_2) = -div((sigma_src-sigma_oo) grad(V_0))
             if M_n is None:
                 raise ValueError("Secondary potential needed but no normalized chargeability M_n give")
             sigma_oo = M_n + sigma_0
@@ -135,7 +135,7 @@ class IPSynthetic(object):
                 if self.createFieldData:
                     print(str(len(self.field_oo)) + " instantaneous fields calculated.")
     def write(self, filename, datacolumns = ['R'], addNoise = False,
-                            rel_error=5, delimiter=",", usesStationCoordinates= False,
+                            rel_error=5, noise_floor=1e-4, delimiter=",", usesStationCoordinates= False,
                             iFMT="%d", dFMT="%.5g", xFMT="%e"):
         """
         writes a data file with given datacolumns
@@ -204,14 +204,20 @@ class IPSynthetic(object):
                     else:
                         out += FMTI % M
                 if addNoise:
-                    pert = np.random.uniform(low = -rel_error, high = rel_error)
+                    pert1 = np.random.uniform(low = -rel_error, high = rel_error)
+                    pert2 = np.random.uniform(low= -rel_error, high=rel_error)
+                    pert3 = np.random.uniform(low=-rel_error, high=rel_error)
                 else:
-                    pert = 0
-                V_0  = dV_0[t]  * (1 + pert)  # ERT potential
-                V_2  = (dV_0[t] - dV_oo[t]) * (1 + pert)  # over-voltage potential
-                #V_oo = V_0 - V_2
+                    pert1 = 0
+                    pert2 = 0
+                    pert3 = 0
+                V_0  = dV_0[t]   # ERT potential
+                V_2  = (dV_0[t] - dV_oo[t])  # over-voltage potential
                 ETA   = V_2 / V_0
-                #ETA = dV_0[t]/V_0*100
+
+                ERR_V0 = sqrt((V_0 * rel_error)**2 + noise_floor**2)
+                ERR_V2 = sqrt((V_2 * rel_error) ** 2 + noise_floor ** 2)
+                ERR_ETA = sqrt((ETA * rel_error) ** 2 + noise_floor ** 2)
 
                 if self.createFieldData:
                     raise ValueError("CHECK E FIELD DATA")
@@ -225,45 +231,50 @@ class IPSynthetic(object):
 
                 for o in datacolumns:
                     if o == 'R':  # resistance [V/A]
-                        out += FMTG % (V_0)
+                        out += FMTG % (V_0 * (1+pert1))
+                    if o == 'R2':  # resistance [V/A]
+                        out += FMTG % (V_2 * (1+pert2))
                     elif o == 'E':  # electric field intensity per charge current [V/(Am)]
                         raise ValueError("check EI ")
                         out += FMTG % (EI)
                     elif o == 'ETA':  # chargeability  [1]
-                        out += FMTG % (ETA )
+                        out += FMTG % (ETA * (1+pert3) )
                     elif o == 'GAMMA':  #
                         raise ValueError("check GAMMA ")
                         out += FMTG % (GAMMA )
                     elif o == 'ERR_R':  # resistance [V/A]
-                        ERR_R = abs(V_0) * rel_error
-                        out += FMTG % ERR_R
+                        out += FMTG % ERR_V0
+                    elif o == 'ERR_R2':  # resistance [V/A]
+                        out += FMTG % ERR_V2
                     elif o == 'ERR_E':  # electric field intensity per charge current [V/(Am)]
                         raise ValueError("check ERR_E ")
                         ERR_E = abs(EI) * rel_error
                         out += FMTG % ERR_E
                     elif o == 'ERR_ETA':  # chargeability  [1]
-                        ERR_ETA = 2 * abs(ETA) * rel_error
                         out += FMTG % ERR_ETA
                     elif o == 'ERR_GAMMA':  # modified chargeability (=ETA/(1-ETA)) [1]
                         raise ValueError("check gamma")
                         ERR_GAMMA = abs(GAMMA) * rel_error
                         out += FMTG % ERR_GAMMA
                     elif o == 'RELERR_R':  # resistance [1]
-                        RELERR_R = rel_error
+                        RELERR_R = ERR_V0/V0
                         out += FMTG % RELERR_R
+                    elif o == 'RELERR_R2':  # resistance [1]
+                        RELERR_R2 = ERR_V2/V2
+                        out += FMTG % RELERR_R2
                     elif o == 'RELERR_E':  # electric field intensity per charge current [1]
                         raise ValueError("check RELERR_E ")
                         RELERR_E = rel_error
                         out += FMTG % RELERR_E
                     elif o == 'RELERR_ETA':  # chargeability  [1]
-                        RELERR_ETA = 2 * rel_error
+                        RELERR_ETA = rel_error
                         out += FMTG % RELERR_ETA
                     elif o == 'RELERR_GAMMA':  #
                         raise ValueError("check RELERR_GAMMA ")
                         RELERR_GAMMA = rel_error
                         out += FMTG % RELERR_GAMMA
                 #f.write(out[:-3] + "\n")
-                f.write(out + "\n")
+                f.write(out[:-2] + "\n")
                 n += 1
             f.close()
             if self.printinfo:

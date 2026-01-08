@@ -5,7 +5,7 @@ sys.path.append(os.getcwd())
 
 import argparse
 import numpy as np
-from fingal import readElectrodeLocations, readSurveyData, IPSynthetic, makeMaskForOuterSurface
+from fingal import readElectrodeLocations, readSurveyData, IPSynthetic
 from esys.finley import ReadMesh, ReadGmsh
 from esys.escript.pdetools import MaskFromBoundaryTag, MaskFromTag
 from esys.weipa import saveVTK, saveSilo

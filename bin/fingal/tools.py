@@ -130,6 +130,8 @@ def getAdditivePotentials(pde, sigma, schedule, sigma_stations=None, source_pote
     """
     calculates the extra/additive potentials V_A for given sigma and source potentials for sigma_src
 
+     DC potential is then V[iA] = potential[iA] + source_potential[iA] * src_potential_scale[iA]
+
     :param pde: PDE used to get the secondary potential. Coefficients are altered.
     :param sigma: electrical conductivity
     :param schedule: schedule of the survey 'ABMN' (or AMN, etc)
@@ -218,9 +220,9 @@ def getAdditivePotentialsWithRobinCondition(pde, sigma, sigma_faces, schedule, s
         logger.info(f"{len(potential)} additive DC potentials calculated.")
     return potential
 
-def getSecondaryPotentials(pde, sigma_oo, M_n, source_potential={}, src_potential_scale_DC = {}, additive_potential_DC ={}, logger=None):
+def getSecondaryIPPotentials(pde, sigma_oo, M_n, source_potential={}, src_potential_scale_DC = {}, additive_potential_DC ={}, logger=None):
     """
-    calculates the extra/additive potentials V_A for given sigma and source potentials for sigma_src
+    calculates the secondary IP potential  for given sigma_oo and Mn.
 
     :param pde: PDE used to get the secondary potential. Coefficients are altered.
     :param sigma_oo: electrical conductivity (for high frequencies)
@@ -232,7 +234,6 @@ def getSecondaryPotentials(pde, sigma_oo, M_n, source_potential={}, src_potentia
     :type source_potential: `dict` of `Scalar`
     :param additive_potential_DC: additive potentials for a sources for sigma_0 = sigma_oo - M_n
     :type additive_potential_DC: `dict` of `Scalar`
-    :type mask_faces: `None` or `Scalar` with `FunctionOnBoundary` attribute
     :return:  secondary/over-voltage potential
     """
     potential = {}

@@ -17,24 +17,24 @@ stationsFMT = 's%s'
 # this defines the data file: 
 # 
 datafile = 'data.csv'
-datacolumns = ['R', 'ETA']
+datacolumns = ['R', 'ERR_R', 'R2', 'ERR_R2', 'ETA']
 dipoleInjections = True
 dipoleMeasurements = True
 datadelimiter = ','
 usesStationCoordinates = False
 schedulefile = 'schedule.csv'
+
 surfacetemperature_file = "surface_temperature.csv"
 surfacetemperature_undef = -9999
 surfacetemperature_skiprows = 1
-surfacetemperature_gradient = 0.03  # = 30K/km
+
 #
 #  This section of the file defines the inversion
 #
 
 region_fixed=[]
-sigma_ref=0.02
-eta_ref= 0.01
-Mn_ref=eta_ref/(1-eta_ref)*sigma_ref
+sigma_ref=1.52e-4
+Mn_ref=5.054e-5
 #def true_properties(domain):
 #    from esys.escript import Scalar, Function
 #    sigma_true=Scalar(sigma_ref, Function(domain))

@@ -62,10 +62,10 @@ print(f"survey schedule read from {schedulefile}.")
 
 out= {"tag" : makeTagMap(Function(domain)) }
 
-maskZeroPotential = MaskFromBoundaryTag(domain, *config.faces_tags)
+mask_zero_potential = MaskFromBoundaryTag(domain, *config.faces_tags)
 # -----------------------------------------------------------------------------------
 runner=ERTSensitivity(domain, schedule,  sigma_src=config.sigma0_ref,
-                    maskZeroPotential = maskZeroPotential,
+                    maskZeroPotential = mask_zero_potential,
                     stationsFMT=config.stationsFMT, printInfo = True)
 
 if args.truesigma and callable(config.true_properties):

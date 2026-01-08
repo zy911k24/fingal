@@ -65,7 +65,8 @@ class ERTMisfitCostFunction(CostFunction):
         # build the misfit data (indexed by source index):
         self.misfit_DC = {}  # potential increment to injection field to get DC potential
         data_atol_DC= self.dataRTolDC * data.getMaximumResistence()
-
+        self.logger.info(f"Relative data cut-off tolerance is {self.dataRTolDC:e}.")
+        self.logger.info(f"Absolute data cut-off tolerance is {data_atol_DC:e}.")
         nd_DC = 0 # counting number of data
         n_small_DC = 0 # number of dropped observations
         for A, B in self.data.injectionIterator():
@@ -81,13 +82,15 @@ class ERTMisfitCostFunction(CostFunction):
                 iMs = [self.data.getStationNumber(M) for M, N in obs_DC]
                 iNs = [self.data.getStationNumber(N) for M, N in obs_DC]
                 if self.useLogMisfitDC:
-                    error_DC = np.array([self.data.getResistenceRelError((A, B, M, N)) for M, N in obs_DC]) + self.dataRTolDC
-                    self.misfit_DC[(iA, iB)] =  DataMisfitLog(iMs=iMs, data=data_DC, iNs=iNs, injections=(A,B), weightings=1. / error_DC**2/n_use_DC)
+                    error_DC = (np.array([self.data.getResistenceRelError((A, B, M, N)) for M, N in obs_DC])**2 + self.dataRTolDC**2) ** 0.5
+                    self.misfit_DC[(iA, iB)] =  DataMisfitLog(iMs=iMs, data=data_DC, iNs=iNs, injections=(A,B), weightings=1. / error_DC**2)
                 else:
-                    error_DC = np.array([self.data.getResistenceError((A, B, M, N)) for M, N in obs_DC]) + data_atol_DC
-                    self.misfit_DC[(iA, iB)] = DataMisfitQuad(iMs=iMs, data=data_DC, iNs=iNs, injections=(A, B), weightings =1./error_DC**2/n_use_DC)
+
+                    error_DC = ( np.array([self.data.getResistenceError((A, B, M, N)) for M, N in obs_DC])**2 + data_atol_DC**2) ** 0.5
+                    print(error_DC, data_DC )
+                    self.misfit_DC[(iA, iB)] = DataMisfitQuad(iMs=iMs, data=data_DC, iNs=iNs, injections=(A, B), weightings =1./error_DC**2)
                 nd_DC+= n_use_DC
-        self.logger.info(f"Absolute data cut-off tolerance is {data_atol_DC:e}.")
+
         self.logger.info(f"{nd_DC} DC data are records used. {n_small_DC} small values found.")
         if nd_DC > 0:
             for iA, iB in self.misfit_DC:

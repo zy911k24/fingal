@@ -9,7 +9,7 @@ from esys.escript.minimizer import CostFunction, MinimizerException
 
 from .tools import PoissonEquationZeroMean
 
-from .tools import setupERTPDE, getSourcePotentials, makeMaskForOuterSurface, getAdditivePotentials, getSecondaryPotentials, DataMisfitQuad, DataMisfitLog
+from .tools import setupERTPDE, getSourcePotentials, makeMaskForOuterSurface, getAdditivePotentials, getSecondaryIPPotentials, DataMisfitQuad, DataMisfitLog
 import logging
 import numpy as np
 from esys.escript.pdetools import Locator,  ArithmeticTuple
