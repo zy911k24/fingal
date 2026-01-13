@@ -1,7 +1,15 @@
 #
 #
 #
+from esys.escript import *
+from esys.weipa import saveSilo
+from esys.escript.minimizer import CostFunction, MinimizerException
+from .tools import setupERTPDE
+import logging
+import numpy as np
+from esys.escript.pdetools import Locator,  ArithmeticTuple
 from .inversionsIP import IPMisfitCostFunction
+
 class IPConductivityModelTemplate(object):
     """
     this a template for class for providing an electric conductivity model for IP inversion
@@ -9,8 +17,14 @@ class IPConductivityModelTemplate(object):
     to other models such as temperature dependencies
     """
 
-    def __init__(self, **kargs):
-        pass
+    def __init__(self, T_min=1, T_max=1000, **kargs):
+        """
+        :param T_min: lower cut-off temperature
+        :param T_max: upper cut-off temperature
+
+        """
+        self.T_min = T_min
+        self.T_max = T_max
 
     def getDCConductivity(self, Mn):
         raise NotImplementedError
@@ -26,15 +40,18 @@ class ConductivityModelByTemperature(IPConductivityModelTemplate):
     """
     temperature based conductivity model
     """
-    def __init__(self, sigma_0_ref=1.52e-4, Mn_ref=5.054e-5, T_ref=15, P_0=2.9, P_Mn=2.5, **kargs):
+
+    def __init__(self, sigma_0_ref=1.52e-4, Mn_ref=5.054e-5, T_ref=15, P_0=2.9, P_Mn=2.5, T_min=1, T_max=1000, **kargs):
         """
         :param T_ref: reference temperature
         :param sigma_0_ref: secondary conductivity at reference temperature
         :param Mn_ref: chargeability at at reference temperature
-        :parem P_0: exponent of secondary conductivity  temperature model
-        :parem P_Mn: exponent of chargeability temperature model
+        :param P_0: exponent of secondary conductivity  temperature model
+        :param P_Mn: exponent of chargeability temperature model
+        :param T_min: lower cut-off temperature
+        :param T_max: upper cut-off temperature
         """
-        super().__init__(**kargs)
+        super().__init__(T_min=T_min, T_max=T_max, **kargs)
         self.T_ref = T_ref
         self.sigma_0_ref = sigma_0_ref
         self.Mn_ref = Mn_ref
@@ -96,134 +113,230 @@ class ConductivityModelByTemperature(IPConductivityModelTemplate):
         DMnDT = self.P_Mn * (self.Mn_ref / self.T_ref) * (T / self.T_ref) ** (self.P_Mn - 1)
         return DMnDT
 
-#=====================
-class TemperatureBasedIPInversion(IPMisfitCostFunction):
-    """
-    Base class to run a IP inversion based on a temperature based model
-    """
-    def __init__(self, domain=None, data=None, weighting_misfit_ERT=0.5, pde_tol=1.e-8, stationsFMT="e%s",
-                 conductivity_model=IPConductivityModelTemplate(), background_temperature=15.,
-                 mask_fixed_temperature=None, useLogMisfitERT=False, useLogMisfitIP = False, logclip=5, **kargs):
-        """
-        :domain: pde domain
-        :data: data, is `fingal.SurveyData`
-        :sigma_0: reference conductivity
-        :weightingMisfitDC: weighting factor for
-        :adjVs_ootStationLocationsToElementCenter: moves the station locations to match element centers.
-        :stationsFMT: format to map station keys k to mesh tags stationsFMT%k or None
-        :logclip: cliping for p to avoid overflow in conductivity calculation
-        :param w0: weighting L2 regularization  int m^2
-        :param w1: weighting H1 regularization  int grad(m)^2
-        :mask_fixed_temperature_temperature: mask for fixed conductivity. needs to be set if w1>0 and w0=0
-        """
-        super().__init__(domain=domain, data=data, weighting_misfit_ERT=weighting_misfit_ERT,
-                         sigma_background=sigma_background, useLogMisfitERT=useLogMisfitERT,
-                         useLogMisfitIPu=seLogMisfitERT,
-                         pde_tol=pde_tol, stationsFMT=stationsFMT, logger=logger, **kargs)
-        #==================TODO
-        self.logclip = logclip
-        self.EPS = EPSILON
-        self.domain = domain
-        self.logclip = logclip
 
-        if mask_fixed_temperature is None:
-            z = self.domain.getX()[2]
-            self.mask_fixed_temperature = whereZero(z - sup(z))
+class InversionIPByTemperature(IPMisfitCostFunction):
+    """
+    Class to run a IP inversion for conductivity (sigma_0, DC) and normalized chargeabilty (Mn=sigma_oo-sigma_0)
+    using H2-regularization on M = grad(m-m_ref) (as 6 components) with m=[m[0], m[1]]:
+
+             m[0]=log(sigma/sigma_ref), m[1]=log(Mn/Mn_ref)
+
+    To recover m from we solve
+
+             (grad(v), grad(m[i]) = (grad(v), M[i*3:(i+1)*3])
+
+    cross-gradient over V is added to cost function with weighting factor theta (=0 by default)
+    """
+
+    def __init__(self, domain, data, maskZeroPotential = None,
+                 conductivity_model=IPConductivityModelTemplate(),
+                 surface_temperature = None, mask_surface_temperature = None,
+                 sigma_src=None, pde_tol=1e-8, stationsFMT="e%s", length_scale=None,
+                 useLogMisfitDC=False, dataRTolDC=1e-4, useLogMisfitIP=False, dataRTolIP=1e-4,
+                 weightingMisfitDC=1, w1=1, reg_tol=None,
+                 conductivity=1., logger=None, **kargs):
+        """
+        :param domain: PDE & inversion domain
+        :param data: survey data, is `fingal.SurveyData`. Resistence and secondary potential data are required.
+        :param maskZeroPotential: mask of locations where electric potential is set to zero.
+        :param conductivity_model: conductivity model
+        :param sigma_src: background conductivity, used to calculate the source potentials. If not set sigma_0_ref
+        is used.
+        :
+
+        :param pde_tol: tolerance for solving the forward PDEs and recovering m from M.
+        :param stationsFMT: format string to convert station id to mesh label
+        :param m_ref: reference property function
+        :param zero_mean_m: constrain m by zero mean.
+        :param useLogMisfitDC: if set logarithm of DC data is used in misfit.
+        :param useLogMisfitIP: if set logarithm of secondary potential (IP) data is used in misfit.
+        :param dataRTolDC: relative tolerance for damping small DC data on misfit
+        :param dataRTolIP: relative tolerance for damping small secondary potential data in misfit
+        :param weightingMisfitDC: weighting factor for DC data in misfit. weighting factor for IP data is one.
+        :param sigma_0_ref: reference DC conductivity
+        :param Mn_ref: reference Mn conductivity
+        :param w1: regularization weighting factor(s) (scalar or numpy.ndarray)
+        :param length_scale: length scale, w0=(1/length scale)**2 is weighting factor for |grad m|^2 = |M|^2 in
+                            the regularization term. If `None`, the term is dropped.
+        :param theta: weigthing factor x-grad term
+        :param fixTop: if set m[0]-m_ref[0] and m[1]-m_ref[1] are fixed at the top of the domain
+                        rather than just on the left, right, front, back and bottom face.
+        :param logclip: value of m are clipped to stay between -logclip and +logclip
+        :param m_epsilon: threshold for small m, grad(m) values.
+        :param reg_tol: tolerance for PDE solve for regularization.
+        :param save_memory: if not set, the three PDEs for the three conponents of the inversion unknwon
+                            with the different boundary conditions are held. Otherwise, boundary conditions
+                            are updated for each component which requires refactorization which obviously
+                            requires more time.
+        :param logger: the logger, if not set, 'fingal.IPInversion.H2' is used.
+        """
+        if sigma_src == None:
+            sigma_src = conductivity_model.sigma_0_ref
+        if logger is None:
+            self.logger = logging.getLogger('fingal.IPInversionByTemperature')
         else:
-            self.mask_fixed_temperature = mask_fixed_temperature
+            self.logger = logger
+        assert length_scale > 0, "Length scale must be positive."
+        super().__init__(domain=domain, data=data, sigma_src=sigma_src, pde_tol=pde_tol,
+                         maskZeroPotential=maskZeroPotential, stationsFMT=stationsFMT,
+                         useLogMisfitDC=useLogMisfitDC, dataRTolDC=dataRTolDC,
+                         useLogMisfitIP=useLogMisfitIP, dataRTolIP=dataRTolIP,
+                         weightingMisfitDC=weightingMisfitDC,
+                         logger=logger, **kargs)
         self.conductivity_model = conductivity_model
-        self.T_bg = background_temperature
-        iTbg = interpolate(self.T_bg, where=Function(domain))
-        sigma_0_bg = self.conductivity_model.getDCConductivity(T=self.T_bg)
-
-        super().__init__(domain=domain, data=data, weighting_misfit_0=weighting_misfit_0, sigma_0_bg=sigma_0_bg,
-                         pde_tol=pde_tol, stationsFMT=stationsFMT, **kargs)
-
-        # regularization
-        self.w2 = w2
-        self.Hpde = setupERTPDE(self.domain)
-        self.Hpde.setValue(A=self.w2 * kronecker(3), q=self.mask_fixed_temperature)
-        self.Hpde.getSolverOptions().setTolerance(min(sqrt(pde_tol), 1e-3))
-
-    def getTemperature(self, m, applyInterploation=False):
-        if applyInterploation:
-            im = interpolate(m, Function(self.domain))
+        if length_scale is None:
+            raise ValueError("Length scale must be given")
         else:
-            im = m
-        im = clip(im, minval=-self.logclip, maxval=self.logclip)
-        T = self.T_bg * exp(im)
+            self.a = (1. / length_scale) ** 2
+        self.logger.info("Length scale factor is %s." % (str(length_scale)))
+        # PDE to recover temperature:
+        if surface_temperature is None:
+            surface_temperature = Scalar( self.conductivity_model.T_ref, Solution(domain))
+        if mask_surface_temperature is None:
+            z =Solution(domain).getX()[2]
+            mask_surface_temperature = whereZero(z-sup(z))
+
+        self.Tpde = setupERTPDE(self.domain)
+        self.Tpde.getSolverOptions().setTolerance(pde_tol)
+        optionsG = self.Tpde.getSolverOptions()
+        from esys.escript.linearPDEs import SolverOptions
+        optionsG.setSolverMethod(SolverOptions.DIRECT)
+        self.Tpde.setValue(A=conductivity * kronecker(3), q=mask_surface_temperature)
+        ## get the initial temperature:
+        self.Tpde.setValue(r=surface_temperature)
+        self.T_background = self.Tpde.getSolution()
+        self.logger.debug("Background Temperature = %s" % (str(self.T_background)))
+        self.Tpde.setValue(r=Data())
+        # ... regularization
+        if not reg_tol:
+            reg_tol = min(sqrt(pde_tol), 1e-3)
+        self.logger.debug(f'Tolerance for solving regularization PDE is set to {reg_tol}')
+        self.Hpde = setupERTPDE(self.domain)
+        self.Hpde.getSolverOptions().setTolerance(reg_tol)
+        self.Hpde.setValue(A=kronecker(3), D=self.a)
+
+        self.setW1(w1)
+    #====
+    def getTemperature(self, M):
+        """
+        returns the temperature from property function M
+        """
+        self.Tpde.setValue(X=M, Y =Data())
+        T = self.Tpde.getSolution() + self.T_background
+        T = clip(T, minval=self.conductivity_model.T_min, maxval=self.conductivity_model.T_max)
         return T
 
-    def getDTdm(self, T):
-        return T
+    def setW1(self, w1):
+        self.w1 = w1
+        self.logger.debug(f'w1 = {self.w1:g}')
 
-    def getArguments(self, m):
+    def getSigma0(self, T, applyInterploation=False):
         """
-        precalculated parameters:
+        get the sigma_0 from temperature T
         """
-        # recover temperature (interpolated to elements)
-        iT = self.getTemperature(m, applyInterploation=True)
-        iMn = self.conductivity_model.getChargeability(T=iT)
-        isigma_0 = self.conductivity_model.getDCConductivity(T=iT)
-        txt2 = str(iT)
-        txt1 = str(m)
-        if getMPIRankWorld() == 0:
-            self.logger.debug("m = " + txt1)
-            self.logger.debug("temperature = " + txt2)
+        if applyInterploation:
+            iT = interpolate(T, Function(self.domain))
+        else:
+            iT = T
+        sigma_0 =  self.conductivity_model.getDCConductivity(T=iT)
+        return sigma_0
 
-        args2 = self.getIPModelAndResponse(sigma_0=isigma_0, Mn=iMn)
-        return iT, isigma_0, iMn, args2
+    def getMn(self, T, applyInterploation=False):
+        if applyInterploation:
+            iT= interpolate(T, Function(self.domain))
+        else:
+            iT= T
+        Mn  =  self.conductivity_model.getChargeability(T=iT)
+        return Mn
 
-    def getValue(self, m, *args):
+    def getDsigma0DT(self, sigma_0, T):
+        iT = interpolate(T, sigma_0.getFunctionSpace())
+        return self.conductivity_model.getDsigma_0DT(T=iT)
+
+    def getDMnDT(self, Mn, T):
+        iT = interpolate(T, Mn.getFunctionSpace())
+        return self.conductivity_model.getDMnDT(T=iT)
+
+    def extractPropertyFunction(self, M):
+        return M
+
+    def getArguments(self, M):
+        """
+        precalculation
+        """
+        M2 = self.extractPropertyFunction(M)
+        iM = interpolate(M2, Function(self.domain))
+        T=self.getTemperature(iM)
+        iT = interpolate(T, Function(self.domain))
+        iT_stations = self.grabValuesAtStations(T)
+        self.logger.debug("Temperature = %s" % (str(iT)))
+        #self.logger.debug("Temperature at stations = %s" % (str(iT_stations)))
+
+        isigma_0 = self.getSigma0(iT)
+        isigma_0_stations = self.getSigma0(iT_stations)
+        iMn = self.getMn(iT)
+        args2 = self.getIPModelAndResponse(isigma_0, isigma_0_stations, iMn)
+        return iT, isigma_0, isigma_0_stations, iMn, args2
+
+    def getValue(self, M, iT, isigma_0, isigma_0_stations, iMn, args2):
         """
         return the value of the cost function
         """
-        iT, isigma_0, iMn = args[0:3]
+        misfit_DC, misfit_IP = self.getMisfit(*args2)
+        gM = grad(M, where=iT.getFunctionSpace())
+        iM = interpolate(M, iT.getFunctionSpace())
+        R = 1. / 2. * integrate(self.w1 * (length(gM) ** 2 + self.a * length(iM) ** 2) )
+        V = R + misfit_DC + misfit_IP
+        self.logger.debug(
+                f'misfit ERT, IP; reg, total \t=  {misfit_DC:e}, {misfit_IP:e};  {R:e} = {V:e}')
+        self.logger.debug(
+                f'ratios ERT, IP; reg \t=  {misfit_DC / V * 100:g}, {misfit_IP / V * 100:g};  {R / V * 100:g}')
 
-        misfit_2, misfit_0 = self.getMisfit(isigma_0, iMn, *args[3])
-
-        H1 = self.w2 / 2 * integrate(length(grad(m)) ** 2)
-        if getMPIRankWorld() == 0:
-            self.logger.debug(
-                f'reg: H1, misfits: ERT, IP =  {H1:e}, {misfit_0:e}, {misfit_2:e}')
-        V = H1 + misfit_2 + misfit_0
         return V
 
-    def getGradient(self, m, *args):
+    #=======================================
+    def getGradient(self, M, iT, isigma_0, isigma_0_stations, iMn, args2):
         """
         returns the gradient of the cost function. Overwrites `getGradient` of `MeteredCostFunction`
         """
-        iT, isigma_0, iMn = args[0:3]
+        gM = grad(M, where=iT.getFunctionSpace())
+        iM = interpolate(M, iT.getFunctionSpace())
 
-        X = self.w2 * grad(m, where=iT.getFunctionSpace())
-        DMisfitDsigma_0, DMisfitDMn = self.getDMisfit(isigma_0, iMn, *args[3])
+        X = self.w1 * gM
+        Y = self.w1 * self.a * iM
 
-        Dsigma_0DT = self.conductivity_model.getDsigma_0DT(iT)
-        DMnDT = self.conductivity_model.getDMnDT(iT)
-        DTDm = self.getDTdm(iT)
-        Y = (DMisfitDMn * DMnDT + DMisfitDsigma_0 * Dsigma_0DT) * DTDm
+        DMisfitDsigma_0, DMisfitDMn = self.getDMisfit(isigma_0, iMn, *args2)
+        Dsigma_0DT = self.getDsigma0DT(isigma_0, iT)
+        DMnDT = self.getDMnDT(iMn, iT)
+        Ystar = DMisfitDMn * DMnDT + DMisfitDsigma_0 * Dsigma_0DT
+        self.Tpde.setValue(Y = Ystar, X=Data())
+        Tstar = self.Tpde.getSolution()
+        Y += grad(Tstar, where=Y.getFunctionSpace())
         return ArithmeticTuple(Y, X)
 
-    def getInverseHessianApproximation(self, r, m, *argsm, initializeHessian=False):
+    def getInverseHessianApproximation(self, r,  iT, isigma_0, isigma_0_stations, iMn, args, initializeHessian=False):
         """
         returns an approximation of inverse of the Hessian. Overwrites `getInverseHessianApproximation` of `MeteredCostFunction`
         """
-        self.Hpde.setValue(X=r[1], Y=r[0])
-        dm = self.Hpde.getSolution()
+        P = Data(0., (3,), Solution(self.domain))
+        for k in [0, 1, 2]:
+            self.Hpde.setValue(X=r[1][k], Y=r[0][k])
+            P[k] = self.Hpde.getSolution() / self.w1
+            self.logger.debug(f"search direction component {k} = {str(P[k])}.")
+        return P
 
-        txt = str(dm)
-        if getMPIRankWorld() == 0:
-            self.logger.debug(f"search direction = {txt}.")
-        return dm
-
-    def getDualProduct(self, m, r):
+    def getDualProduct(self, M, r):
         """
-        dual product of gradient `r` with increment `m`. Overwrites `getDualProduct` of `MeteredCostFunction`
+        dual product of gradient `r` with increment `V`. Overwrites `getDualProduct` of `MeteredCostFunction`
         """
-        return integrate(r[0] * m + inner(r[1], grad(m)))
+        return integrate(inner(r[0], M) + inner(r[1], grad(M)))
 
-    def getNorm(self, m):
+    def getNorm(self, M):
         """
         returns the norm of property function `m`. Overwrites `getNorm` of `MeteredCostFunction`
         """
-        return Lsup(m)
+        return Lsup(M)
+
+    def getSqueezeFactor(self, M, p):
+        return None
+

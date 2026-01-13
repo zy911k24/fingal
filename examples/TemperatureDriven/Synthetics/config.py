@@ -7,6 +7,12 @@ project='Synthetic Temperature'
 #   name of the mesh file
 # 
 meshfile = 'mesh.fly'
+
+faces_tags = ['faces']
+surface_tags = ['surface']
+core_tags = ['core']
+padding_tags = ['padding']
+
 #
 #  file of the location of stations/electrodes. 
 #
@@ -64,10 +70,7 @@ useLogMisfitIP = False #  True
 # Output handeling:
 #
 outfile='sigma'
-core = ['core']
 #   tag(s) for face elements (excluding top surface)
-faces = ['faces']
-topsurfaces = ['top']
 restartfile = 'restart'
 
 

@@ -1,6 +1,10 @@
 #!/usr/bin/python3
-
+try:
+    from mpi4py import MPI
+except ImportError:
+    pass
 import importlib, sys, os
+
 from esys.escript import *
 
 
@@ -57,23 +61,19 @@ survey=readSurveyData(config.datafile, stations=elocations, usesStationCoordinat
                      dipoleInjections=config.dipoleInjections, dipoleMeasurements=config.dipoleMeasurements, delimiter=config.datadelimiter, commend='#', printInfo=args.debug)
 assert survey.getNumObservations()>0, "no data found."
 
-#if getMPIRankWorld() == 0:
-#    print("INPUT: w2, output = %e, %s"%(args.W2, args.OUTFILE))
-
-#tags_top=[s.strip() for s in args.tags_top.split(',')  ]
-#usetags_top=tags_top is [s.strip()  for s in domain.showTagNames().split(',') if s.strip() in tags_top ]
 
 z = domain.getX()[2]
 # create a mask of nodes on the surface:
-if config.topsurfaces :
-    maskSurfaceTemperatureNodes=MaskFromBoundaryTag(domain, *tuple(config.topsurfaces))
-    maskTopSurfaceElements=Scalar(0., FunctionOnBoundary(domain))
-    [ maskTopSurfaceElements.setTaggedValue(t, 1.) for t in config.topsurfaces ]
+if config.surface_tags :
+    maskSurfaceTemperatureNodes=MaskFromBoundaryTag(domain, *tuple(config.surface_tags))
+    #maskTopSurfaceElements=Scalar(0., FunctionOnBoundary(domain))
+    #[ maskTopSurfaceElements.setTaggedValue(t, 1.) for t in config.surface_tags ]
     if getMPIRankWorld() == 0:
-        print("surface tag "+str(config.topsurfaces)+" are used.")
+        print("surface tag "+str(config.surface_tags)+" are used.")
 else:
     maskSurfaceTemperatureNodes=whereZero(z-sup(z))
-    maskTopSurfaceElements=whereZero(FunctionOnBoundary(domain).getX()[2]-sup(z))
+    #maskTopSurfaceElements=whereZero(FunctionOnBoundary(domain).getX()[2]-sup(z))
+
 # if a surface temperature  file is given the  T_surf, maskTemperatureInterpolatedFromData is extracted from the    
 if config.surfacetemperature_file:
     DEMundef=config.surfacetemperature_undef
@@ -85,12 +85,57 @@ if config.surfacetemperature_file:
     x=domain.getX()
     interp=InterpolatorWithExtension((DEMx, DEMy), surfTemperatureData  , inf(x[0]), sup(x[0]), inf(x[1]), sup(x[1]),  markExtrapolation=False)
     T_surf, maskTemperatureInterpolatedFromData = mapToDomain2D(Scalar(0., maskSurfaceTemperatureNodes.getFunctionSpace()), interp, where=maskSurfaceTemperatureNodes)
-    print("surface temperature loaded from ", config.surfacetemperature_file)
+    if getMPIRankWorld() == 0:
+        print("surface temperature loaded from ", config.surfacetemperature_file)
 else:
     T_surf=Scalar(args.TSURF, Solution(domain))
     maskTemperatureInterpolatedFromData = maskSurfaceTemperatureNodes
-    print("surface temperature set to ",str(args.TSURF))
+    if getMPIRankWorld() == 0:
+        print("surface temperature set to ",str(args.TSURF))
+# ====================================================================
+survey=readSurveyData(config.datafile, stations=elocations, usesStationCoordinates=False, columns=[ 'R', 'ERR_R', 'R2', 'ERR_R2'],
+                     dipoleInjections=True, dipoleMeasurements=True, delimiter=',', commend='#', printInfo=args.debug, unDefined=-999999)
+assert survey.getNumObservations()>0, "no data found."
+if getMPIRankWorld() == 0:
+    print("data read from "+config.datafile)
+    print(survey.getNumObservations()," records found.")
+# ....create access to the conductivity model ... :
+my_conductivity_model=ConductivityModelByTemperature()
+if getMPIRankWorld() == 0:
+    print(f"Conductivity model initiated: T_ref = {my_conductivity_model.T_ref}\n\t\t\tsigma_0_ref = {my_conductivity_model.sigma_0_ref}, exponent = {my_conductivity_model.P_0}\n\t\t\tMn_ref = {my_conductivity_model.Mn_ref}, exponent = {my_conductivity_model.P_Mn}")
 
+
+# ===== Start inversion
+
+
+
+
+costf = InversionIPByTemperature(domain, data=survey,  maskZeroPotential=mask_face,
+                                        pde_tol= config.pde_tol,
+                                        stationsFMT=config.stationsFMT, m_ref=m_ref,
+                                        useLogMisfitDC=config.use_log_misfit_DC, dataRTolDC=config.data_rtol,
+                                        useLogMisfitIP=config.use_log_misfit_IP, dataRTolIP=config.data_rtol,
+                                        weightingMisfitDC=config.regularization_weighting_DC_misfit,
+                                        sigma_0_ref=config.sigma0_ref, Mn_ref= config.Mn_ref,
+                                        w1=w1, theta=config.regularization_theta,
+                                        fixTop=config.fix_top,  logclip=config.clip_property_function, m_epsilon=1e-18,
+                                        length_scale=config.regularization_length_scale,
+                                        reg_tol=None,
+                                        logger=logger.getChild(f"TemperatureIP") )
+
+
+1/0
+
+print(f"\tT_ref = {my_conductivity_model.T_ref}.")
+print(f"\tsigma_0_ref = {my_conductivity_model.sigma_0_ref}")
+print(f"\tP_0 = {my_conductivity_model.P_0}")
+print(f"\tsigma_0(1) = {my_conductivity_model.sigma_0_ref/my_conductivity_model.T_ref**my_conductivity_model.P_0}")
+print(f"\tMn_ref = {my_conductivity_model.Mn_ref}")
+print(f"\tP_Mn = {my_conductivity_model.P_Mn}")
+print(f"\tMn(1) = {my_conductivity_model.Mn_ref/my_conductivity_model.T_ref**my_conductivity_model.P_Mn}")
+
+saveSilo("Ttest", T=T_surf, mask=maskSurfaceTemperatureNodes)
+1/0
 #  temp_set = nodes where temperature is known from surface temperaturs and are ot the top surface
 temp_set = maskSurfaceTemperatureNodes * maskTemperatureInterpolatedFromData
 
@@ -100,22 +145,8 @@ T_bg=createBackgroundTemperature(domain, T=T_surf, mask_fixed_temperature=temp_s
 
 print(" background temperature = ", str(T_bg))
 # ..................
-survey=readSurveyData(config.datafile, stations=elocations, usesStationCoordinates=False, columns=[ 'R', 'ETA'],
-                     dipoleInjections=True, dipoleMeasurements=True, delimiter=',', commend='#', printInfo=args.debug, unDefined=-999999)
-assert survey.getNumObservations()>0, "no data found."
-print("data read from "+config.datafile)
-print(survey.getNumObservations()," records found.")
 
-# ....create access to the conductivity model ... :
-my_conductivity_model=ConductivityModelByTemperature()
-print(f"Conductivity model initiated:")
-print(f"\tT_ref = {my_conductivity_model.T_ref}.")
-print(f"\tsigma_0_ref = {my_conductivity_model.sigma_0_ref}")
-print(f"\tP_0 = {my_conductivity_model.P_0}")
-print(f"\tsigma_0(1) = {my_conductivity_model.sigma_0_ref/my_conductivity_model.T_ref**my_conductivity_model.P_0}")
-print(f"\tMn_ref = {my_conductivity_model.Mn_ref}")
-print(f"\tP_Mn = {my_conductivity_model.P_Mn}")
-print(f"\tMn(1) = {my_conductivity_model.Mn_ref/my_conductivity_model.T_ref**my_conductivity_model.P_Mn}")
+
 
 #maskTopSurfaceElements.expand()
 #saveSilo("x", n=maskSurfaceTemperatureNodes, e=maskTopSurfaceElements, Tsurf=T_surf, mm=maskTemperatureInterpolatedFromData, Tbg=T_bg)

@@ -52,6 +52,12 @@ class IPMisfitCostFunction(CostFunction):
             self.logger = logger
         if not maskZeroPotential or not Lsup(maskZeroPotential) > 0:
             raise ValueError("non-zero mask for zero potential must be given.")
+        if maskZeroPotential is None:
+            x=doamin.getX()
+            qx = whereZero(x[0] - inf(x[0])) + whereZero(x[0] - sup(x[0]))
+            qy = whereZero(x[1] - inf(x[1])) + whereZero(x[1] - sup(x[1]))
+            qz = whereZero(x[2] - inf(x[2]))
+            maskZeroPotential = qx + qy + qz
 
         self.domain = domain
         self.stationsFMT = stationsFMT
@@ -102,16 +108,13 @@ class IPMisfitCostFunction(CostFunction):
                 iMs = [self.data.getStationNumber(M) for M, N in obs_DC]
                 iNs = [self.data.getStationNumber(N) for M, N in obs_DC]
                 if self.useLogMisfitDC:
-                    error_DC = np.array([self.data.getResistenceRelError((A, B, M, N)) for M, N in obs_DC]) + self.dataRTolDC
-                    self.misfit_DC[(iA, iB)] =  DataMisfitLog(iMs=iMs, data=data_DC, iNs=iNs, injections=(A,B), weightings=1. / error_DC**2/n_use_DC)
+                    error_DC2 = (np.array([self.data.getResistenceRelError((A, B, M, N)) for M, N in obs_DC])**2 + self.dataRTolDC**2)
+                    self.misfit_DC[(iA, iB)] =  DataMisfitLog(iMs=iMs, data=data_DC, iNs=iNs, injections=(A,B), weightings=1. / error_DC2)
                 else:
-                    error_DC = np.array([self.data.getResistenceError((A, B, M, N)) for M, N in obs_DC]) + data_atol_DC
-                    self.misfit_DC[(iA, iB)] = DataMisfitQuad(iMs=iMs, data=data_DC, iNs=iNs, injections=(A, B), weightings =1./error_DC**2/n_use_DC)
+                    error_DC2 = (np.array([self.data.getResistenceError((A, B, M, N)) for M, N in obs_DC])**2 + data_atol_DC**2)
+                    self.misfit_DC[(iA, iB)] = DataMisfitQuad(iMs=iMs, data=data_DC, iNs=iNs, injections=(A, B), weightings =1./error_DC2)
 
-                error_DC_max = max( error_DC_max, max(error_DC))
-                error_DC2_invsum+= sum(abs(data_DC)**2/error_DC**2)
-                print("DC:", data_DC, error_DC, data_DC/error_DC, data.getMaximumResistence()/error_DC, error_DC_max, error_DC2_invsum)
-                nd_DC+= n_use_DC
+                nd_DC+= len(self.misfit_DC[(iA, iB)])
             # ........... IP part .................................................................
             data_IP = np.array([self.data.getSecondaryResistenceData((A, B, M, N)) for M, N in obs])
             use_mask_IP =np.array( [ not self.data.isUndefined(v) for v in data_IP ] )
@@ -123,29 +126,20 @@ class IPMisfitCostFunction(CostFunction):
                 iMs = [self.data.getStationNumber(M) for M, N in obs_IP]
                 iNs = [self.data.getStationNumber(N) for M, N in obs_IP]
                 if self.useLogMisfitIP:
-                    error_IP = np.array([self.data.getSecondaryResistenceRelError((A, B, M, N)) for M, N in obs_IP])  + self.dataRTolIP
+                    error_IP2 = np.array([self.data.getSecondaryResistenceRelError((A, B, M, N)) for M, N in obs_IP])**2  + self.dataRTolIP**2
                     self.misfit_IP[(iA, iB)] = DataMisfitLog(iMs=iMs, data=data_IP, iNs=iNs, injections=(A, B),
-                                                             weightings=1. / error_IP ** 2 / n_use_IP)
+                                                             weightings=1. / error_IP2)
                 else:
-                    #C = np.array([self.data.getChargeabilityData((A, B, M, N)) for M, N in obs_IP])
-                    error_IP = np.array([self.data.getSecondaryResistenceError((A, B, M, N)) for M, N in obs_IP]) + data_atol_IP
+                    error_IP2 = np.array([self.data.getSecondaryResistenceError((A, B, M, N)) for M, N in obs_IP])**2 + data_atol_IP**2
                     self.misfit_IP[(iA, iB)] = DataMisfitQuad(iMs=iMs, data=data_IP, iNs=iNs, injections=(A, B),
-                                                              weightings=1. / error_IP ** 2 / n_use_IP)
-                error_IP_max = max( error_IP_max, max(error_IP))
-                error_IP2_invsum+= sum(data_IP**2/error_IP**2)
-                #print("IP:", data_IP, error_IP,  data_IP/error_IP, data.getMaximumSecondaryResistence()/error_IP, error_IP_max, error_IP2_invsum)
-                #print("R:", data_IP/data_DC, C, data_IP/error_IP *  error_DC/data_DC )
+                                                              weightings=1. / error_IP2)
+
                 nd_IP += len(self.misfit_IP[(iA, iB)])
-        print("f_DC = ",error_DC2_invsum/nd_DC)
-        print("f_IP = ", error_IP2_invsum/nd_IP)
-        print(1/data.getMaximumChargeability()**2, error_IP2_invsum/error_DC2_invsum
-              )
+
         self.logger.info(f"Data drop tolerance for resistance is {data_atol_DC:e}.")
         self.logger.info(f"{nd_DC} DC data are records used. {n_small_DC} small values found.")
         self.logger.info(f"Data drop tolerance for secondary resistance is {data_atol_IP:e}.")
         self.logger.info(f"{nd_IP} IP data are records used. {n_small_IP} small values found.")
-        #ffff2 = data.getMaximumChargeability() ** 2
-        ffff2 = 1
         if not nd_IP + nd_DC >0 :
             raise ValueError("No data for the inversion.")
         if nd_DC > 0:
@@ -153,7 +147,7 @@ class IPMisfitCostFunction(CostFunction):
                 self.misfit_DC[(iA, iB)].rescaleWeight(1. / (2 * nd_DC))
         if nd_IP > 0:
             for iA, iB in self.misfit_IP:
-                self.misfit_IP[(iA, iB)].rescaleWeight(1. / (2 * nd_IP)  * ffff2  )
+                self.misfit_IP[(iA, iB)].rescaleWeight(1. / (2 * nd_IP)  )
         self.ignoreERTMisfit(False)
         self.ignoreIPMisfit(False)
 

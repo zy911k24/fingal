@@ -120,7 +120,7 @@ class MeshWithTopgraphy(object):
             xg, yg = self.toGlobalCoordinates(x, y)
             return self.interp((xg, yg))
         else:
-            if isinstance(x, np.nparray):
+            if isinstance(x, np.ndarray):
                 return self.zlevel * np.ones(x.shape)
             else:
                 return self.zlevel
