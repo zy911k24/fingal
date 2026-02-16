@@ -179,7 +179,7 @@ for n, v in enumerate([ (50, 170), (100, 80), (180, 0) ]):
     f.close()
     print(f"data saved to file {datafile}.")
 
-    kargs = { 'sigma' : 1/rho,   'damage' : m3, 'tag' : makeTagMap(Function(domain)) }
+    kargs = { 'sigma' : 1/rho,   'damage' : m3, 'tag' : getRegionTags(Function(domain)) }
     for p in [] : # [101, 140, 220] :
         kargs[f'u{p}'] =   src_potentials[schedule.getStationNumber(p)]
     #                    * src_potential_scale[schedule.getStationNumber(p)] + \

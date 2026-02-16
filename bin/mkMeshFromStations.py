@@ -220,6 +220,6 @@ if not args.mshno:
     domain.write(config.meshfile)
     print("Mesh written to file %s"%(config.meshfile))
     if args.silofile:
-        saveSilo(args.silofile , tag = makeTagMap(Function(domain)))
+        saveSilo(args.silofile , tag = getRegionTags(Function(domain)))
         print(f'Mesh written to file {args.silofile}.silo.')
     

@@ -265,15 +265,30 @@ class SurveyData(object):
 
     def getMaximumResistence(self):
         if self._resistence_max is None:
-            self._resistence_max = max([ abs(self.getResistenceData(t)) for t in self.tokenIterator() ] )
+            values = []
+            for t in self.tokenIterator():
+                v = self.getResistenceData(t)
+                if not self.isUndefined(v):
+                    values.append(abs(v))
+            self._resistence_max = max(values)
         return self._resistence_max
     def getMaximumSecondaryResistence(self):
         if self._secondary_resistence_max is None:
-            self._secondary_resistence_max = max([ abs(self.getSecondaryResistenceData(t)) for t in self.tokenIterator() ] )
+            values = []
+            for t in self.tokenIterator():
+                v = self.getSecondaryResistenceData(t)
+                if not self.isUndefined(v):
+                    values.append(abs(v))
+            self._secondary_resistence_max = max (values )
         return self._secondary_resistence_max
     def getMaximumChargeability(self):
         if self._chargeability_max is None:
-            self._chargeability_max = max([ abs(self.getChargeabilityData(t)) for t in self.tokenIterator() ] )
+            values = []
+            for t in self.tokenIterator():
+                v = self.getChargeabilityData(t)
+                if not self.isUndefined(v):
+                    values.append(abs(v))
+            self._chargeability_max = max( values )
         return self._chargeability_max
     # ======================
     def getResistenceData(self, token):

@@ -61,7 +61,7 @@ schedule = readSurveyData(schedulefile, stations=elocations, usesStationCoordina
                         commend='#', printInfo=True)
 print(f"survey schedule read from {schedulefile}.")
 
-out= {"tag" : makeTagMap(Function(domain)) }
+out= {"tag" : getRegionTags(Function(domain)) }
 
 mask_zero_potential = MaskFromBoundaryTag(domain, *config.faces_tags)
 # -----------------------------------------------------------------------------------

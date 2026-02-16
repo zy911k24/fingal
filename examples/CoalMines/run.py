@@ -72,7 +72,7 @@ for kk in range(Nsteps):
     X_south, rho_south[kk] = makeApparentResitivity(minegeo.LineSouth,u_south, minegeo, injections=(A, B), I = I, dir=0)
 
     SILOFILE=os.path.join(SILODIR,f"u{kk}")
-    saveSilo(SILOFILE, u1=u1, u=u, u2=u2,  rho=rho, tag=makeTagMap(ReducedFunction(domain)))
+    saveSilo(SILOFILE, u1=u1, u=u, u2=u2,  rho=rho, tag=getRegionTags(ReducedFunction(domain)))
     print(f'results written to file {SILOFILE}.silo.')
 import matplotlib.pyplot as plt
 

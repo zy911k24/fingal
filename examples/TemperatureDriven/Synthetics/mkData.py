@@ -9,11 +9,11 @@ try:
 except ImportError:
     pass
 from esys.escript import *
-from esys.finley import ReadGmsh
+from esys.finley import ReadGmsh, ReadMesh
 from fingal import readElectrodeLocations, readSurveyData, ConductivityModelByTemperature, IPSynthetic, makeMaskForOuterSurface, setupERTPDE
 from esys.weipa import saveVTK, saveSilo
 from esys.escript.linearPDEs import LinearSinglePDE, SolverOptions
-from esys.escript.pdetools import MaskFromTag, Locator, MaskFromBoundaryTag
+from esys.escript.pdetools import getMaskFromBoundaryTag, Locator
 
 import numpy as np
 import argparse
@@ -44,14 +44,10 @@ FLYFILE=args.geofile + ".fly"
 GEOFILE = args.geofile + ".geo"
 #=====================
 T_air=15  # air temperature in celcius!
-K = 1.
-temperature_gradient = 0.03  # = 30K/km
-q_bottom= temperature_gradient * K
-h_top=0.05 # convective heat transfer coefficient in  W/m/K
-Q_volcano = 0.15# heatsource of volcane W/m^3/K
+q_bottom= config.background_heat_surface_flux_bottom
+h_top=0.05*2 # convective heat transfer coefficient in  W/m/K
+Q_volcano = 0.8# heatsource of volcane W/m^3/K
 #===========================================
-
-
 
 
 elocations=readElectrodeLocations(config.stationfile, delimiter=config.stationdelimiter)
@@ -149,20 +145,23 @@ if not args.haveMesh:
 
 
 
-# read mesh
-dts=[]
-dps=[]
-for s in elocations:
-    if config.stationsFMT:
-        dts.append(config.stationsFMT%s)
-    else:
-        dts.append(s)
-    dps.append(elocations[s])
-domain=ReadGmsh(MSHFILE, 3, diracPoints=dps, diracTags=dts, optimize=True )
-domain.write(FLYFILE)
+    # read mesh
+    dts=[]
+    dps=[]
+    for s in elocations:
+        if config.stationsFMT:
+            dts.append(config.stationsFMT%s)
+        else:
+            dts.append(s)
+        dps.append(elocations[s])
+    domain=ReadGmsh(MSHFILE, 3, diracPoints=dps, diracTags=dts, optimize=True )
+    domain.write(FLYFILE)
+else:
+    domain=ReadMesh(FLYFILE)
+    print("mesh read from "+FLYFILE)
 #---------- construct temperature --------------------------------
 pde = setupERTPDE(domain, tolerance=1e-10, poisson=False, debug=1)
-pde.setValue(A=K*kronecker(3))
+pde.setValue(A=config.thermal_conductivity *kronecker(3))
 
 # flux at top and buttom
 qs=Scalar(0., FunctionOnBoundary(domain))
@@ -172,7 +171,7 @@ h=Scalar(0., FunctionOnBoundary(domain))
 h.setTaggedValue("SurfaceTop", h_top)
 pde.setValue(y=qs, d=h)
 
-Q=Scalar(0., Function(domain))
+Q=Scalar(config.background_heat_production, Function(domain))
 Q.setTaggedValue("Volcano", Q_volcano)
 pde.setValue(Y=Q)
 
@@ -229,8 +228,10 @@ print("Mn = ",str(Mn))
 print("Mn_at_stations = ",str(Mn_at_stations))
 # -----------------------------------------------------------------------------------
 tag_faces = ['SurfaceBottom', 'VerticalFaces']
-mask_zero_potential = MaskFromBoundaryTag(domain, *tuple(tag_faces) )
-runner=IPSynthetic(domain, survey,  sigma_src=config.sigma_ref,
+
+mask_zero_potential = getMaskFromBoundaryTag(domain, *tuple(tag_faces) )
+
+runner=IPSynthetic(domain, survey,  sigma_src=conductivity_model.sigma_0_ref,
                     maskZeroPotential = mask_zero_potential,
                     stationsFMT=config.stationsFMT,
                     createSecondaryData=True,
@@ -245,7 +246,7 @@ runner.write(config.datafile , datacolumns = config.datacolumns, addNoise = args
                             iFMT="%d", dFMT="%.5g", xFMT="%e")
 # -----------------------------------------------------------------------------------
 if args.silofile:
-    kwargs = { "Mn" : Mn, "sigma0" : sigma0, "eta" : Mn/(Mn+sigma0), "tag" : makeTagMap(Function(domain)) }
+    kwargs = { "Mn" : Mn, "sigma0" : sigma0, "eta" : Mn/(Mn+sigma0), "tag" : getRegionTags(Function(domain)) }
     A=list(elocations.keys())[0]
     iA=survey.getStationNumber(A)
     kwargs[f'V0{A}'] = runner.potential_0[iA]

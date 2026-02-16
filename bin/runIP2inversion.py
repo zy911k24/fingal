@@ -137,11 +137,11 @@ sigma0 = costf.getSigma0(m)
 Mn = costf.getMn(m)
 
 if args.vtk:
-    saveVTK(config.outfile, sigma0=sigma0, Mn=Mn, tag=makeTagMap(Function(domain)))
+    saveVTK(config.outfile, sigma0=sigma0, Mn=Mn, tag=getRegionTags(Function(domain)))
     if getMPIRankWorld() == 0: 
         print("result written to %s.vtu"%config.outfile)
 else:
-    saveSilo(config.outfile, sigma0=sigma0, Mn=Mn, tag=makeTagMap(Function(domain)))
+    saveSilo(config.outfile, sigma0=sigma0, Mn=Mn, tag=getRegionTags(Function(domain)))
     if getMPIRankWorld() == 0: 
             print("result written to %s.silo"%config.outfile)
 

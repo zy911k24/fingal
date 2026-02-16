@@ -46,5 +46,5 @@ domain.write(config.meshfile)
 print("Mesh written to file %s"%config.meshfile)
 
 if args.silo:
-    saveSilo(args.silo, tags=makeTagMap(Function(domain)))
+    saveSilo(args.silo, tags=getRegionTags(Function(domain)))
     print("Mesh written to silo file %s.silo"%args.silo)

@@ -5,7 +5,6 @@ import importlib, sys, os
 from esys.finley import ReadMesh, ReadGmsh
 from esys.weipa import saveVTK, saveSilo
 import argparse
-from fingal import makeTagMap
 
 
 parser = argparse.ArgumentParser(description='creates a silo/vtk file from fly.')
@@ -20,8 +19,8 @@ domain=ReadMesh(args.meshfile)
 print("mesh read from "+args.meshfile)
 
 if args.silo is not None:
-    saveSilo(args.silo,tag=makeTagMap(ReducedFunction(domain)))
+    saveSilo(args.silo,tag=getRegionTags(ReducedFunction(domain)))
     print(args.silo+".silo with tags has been generate")
 if args.vtk is not None:
-    saveSilo(args.vtk,tag=makeTagMap(ReducedFunction(domain)))
+    saveSilo(args.vtk,tag=getRegionTags(ReducedFunction(domain)))
     print(args.vtk+".vtk with tags has been generated.")

@@ -91,8 +91,6 @@ class IPMisfitCostFunction(CostFunction):
 
         self.misfit_IP = {}  # secondary potentials
         self.misfit_DC = {}  #
-        error_DC_max, error_IP_max = 0., 0.
-        error_DC2_invsum, error_IP2_invsum = 0., 0.
         nd_DC, nd_IP = 0,0 # counting number of data
         n_small_DC, n_small_IP= 0,0 # number of dropped observations
         for A, B in self.data.injectionIterator():
@@ -108,12 +106,13 @@ class IPMisfitCostFunction(CostFunction):
                 iMs = [self.data.getStationNumber(M) for M, N in obs_DC]
                 iNs = [self.data.getStationNumber(N) for M, N in obs_DC]
                 if self.useLogMisfitDC:
-                    error_DC2 = (np.array([self.data.getResistenceRelError((A, B, M, N)) for M, N in obs_DC])**2 + self.dataRTolDC**2)
+                    #error_DC2 = (np.array(   [self.data.getResistenceRelError((A, B, M, N)) for M, N in obs_DC]) ** 2 + self.dataRTolDC ** 2)
+                    error_DC2 = np.maximum(np.array([self.data.getResistenceRelError((A, B, M, N)) for M, N in obs_DC])**2, self.dataRTolDC**2)
                     self.misfit_DC[(iA, iB)] =  DataMisfitLog(iMs=iMs, data=data_DC, iNs=iNs, injections=(A,B), weightings=1. / error_DC2)
                 else:
-                    error_DC2 = (np.array([self.data.getResistenceError((A, B, M, N)) for M, N in obs_DC])**2 + data_atol_DC**2)
+                    #error_DC2 = (np.array([self.data.getResistenceError((A, B, M, N)) for M, N in obs_DC])**2 + data_atol_DC**2)
+                    error_DC2 = np.maximum(np.array([self.data.getResistenceError((A, B, M, N)) for M, N in obs_DC])**2, data_atol_DC**2)
                     self.misfit_DC[(iA, iB)] = DataMisfitQuad(iMs=iMs, data=data_DC, iNs=iNs, injections=(A, B), weightings =1./error_DC2)
-
                 nd_DC+= len(self.misfit_DC[(iA, iB)])
             # ........... IP part .................................................................
             data_IP = np.array([self.data.getSecondaryResistenceData((A, B, M, N)) for M, N in obs])
@@ -126,14 +125,16 @@ class IPMisfitCostFunction(CostFunction):
                 iMs = [self.data.getStationNumber(M) for M, N in obs_IP]
                 iNs = [self.data.getStationNumber(N) for M, N in obs_IP]
                 if self.useLogMisfitIP:
-                    error_IP2 = np.array([self.data.getSecondaryResistenceRelError((A, B, M, N)) for M, N in obs_IP])**2  + self.dataRTolIP**2
+                    #error_IP2 = np.array([self.data.getSecondaryResistenceRelError((A, B, M, N)) for M, N in obs_IP])**2  + self.dataRTolIP**2
+                    error_IP2 = np.maximum(np.array([self.data.getSecondaryResistenceRelError((A, B, M, N)) for M, N in obs_IP]) ** 2, self.dataRTolIP ** 2)
                     self.misfit_IP[(iA, iB)] = DataMisfitLog(iMs=iMs, data=data_IP, iNs=iNs, injections=(A, B),
                                                              weightings=1. / error_IP2)
                 else:
-                    error_IP2 = np.array([self.data.getSecondaryResistenceError((A, B, M, N)) for M, N in obs_IP])**2 + data_atol_IP**2
+                    #error_IP2 = (np.array([self.data.getSecondaryResistenceError((A, B, M, N)) for M, N in obs_IP])**2 + data_atol_IP**2)
+                    error_IP2 = np.maximum(np.array([self.data.getSecondaryResistenceError((A, B, M, N)) for M, N in
+                                           obs_IP]) ** 2,  data_atol_IP ** 2)
                     self.misfit_IP[(iA, iB)] = DataMisfitQuad(iMs=iMs, data=data_IP, iNs=iNs, injections=(A, B),
                                                               weightings=1. / error_IP2)
-
                 nd_IP += len(self.misfit_IP[(iA, iB)])
 
         self.logger.info(f"Data drop tolerance for resistance is {data_atol_DC:e}.")
@@ -274,8 +275,11 @@ class IPMisfitCostFunction(CostFunction):
 
         misfit_IP, misfit_DC = 0., 0.
         for iA, iB in self.misfit_IP:
+            #print("IP :", iA, iB, self.misfit_IP[(iA, iB)].getValue(secondary_potentials_IP_stations[iA] - secondary_potentials_IP_stations[iB]))
             misfit_IP += self.misfit_IP[(iA, iB)].getValue(
                 secondary_potentials_IP_stations[iA] - secondary_potentials_IP_stations[iB])
+        for iA, iB in self.misfit_DC:
+            #print("DC: ", iA, iB, self.misfit_DC[(iA, iB)].getValue(potentials_DC_stations[iA] - potentials_DC_stations[iB]))
             misfit_DC += self.misfit_DC[(iA, iB)].getValue(
                  potentials_DC_stations[iA] - potentials_DC_stations[iB])
 

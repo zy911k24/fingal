@@ -487,6 +487,9 @@ class InterpolatorWithExtension(object):
     :param ymax: maximal Y coordinate of interpolation domain
     :param markExtrapolation: If values obtained by extrapolation are marked.
     """
+    INTERPOLATED = 1
+    EXTRAPOLATED = 0
+
     def __init__(self, locations, data, xmin, xmax, ymin, ymax, markExtrapolation=False):
         from scipy.interpolate import griddata, NearestNDInterpolator, RegularGridInterpolator
         import numpy as np
@@ -508,11 +511,9 @@ class InterpolatorWithExtension(object):
         Y = np.linspace(ymin, ymax, num=ny)
         grid_x, grid_y = np.meshgrid(X, Y, indexing='ij')
         if self.markExtrapolation:
-            z_grid = griddata(locations, data, (grid_x, grid_y), method='nearest')
             test_grid = griddata(locations, data, (grid_x, grid_y), method='linear')
             self.interpolator_to_test_extrapolation = RegularGridInterpolator((X, Y), test_grid)
-        else:
-            z_grid = griddata(locations, data, (grid_x, grid_y), method='nearest')
+        z_grid = griddata(locations, data, (grid_x, grid_y), method='nearest')
         self.interpolator = RegularGridInterpolator((X, Y), z_grid)
 
     def __call__(self, x, y):
@@ -521,11 +522,12 @@ class InterpolatorWithExtension(object):
         the value together with index 0 or 1 for 'extrapolated' or 'genuine' is returned.
         """
         if self.markExtrapolation:
-            v = self.interpolator_to_test_extrapolation((x, y))
-            i = 1
-            if np.isnan(v):
-                i = 0
-                v = self.interpolator((x, y))
+            vtest = self.interpolator_to_test_extrapolation((x, y))
+            if np.isnan(vtest):
+                i = self.EXTRAPOLATED
+            else:
+                i = self.INTERPOLATED
+            v = self.interpolator((x, y))
             return v, i
         else:
             return self.interpolator((x, y)), 1
@@ -534,7 +536,7 @@ class InterpolatorWithExtension(object):
 def mapToDomain2D(target, interpolator, where=None):
     """
     this the interpolator(x,y) to fill ``Data`` object `target`.
-    `target` annd `target_interpolated` are returned where
+    `target` and `target_interpolated` are returned where
      values in `target` with `target_interpolated` >0 obtained by interpolation.
     If `where` is given only location with `where` value > 0 are set.
     """

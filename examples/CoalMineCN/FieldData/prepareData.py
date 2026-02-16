@@ -2,7 +2,7 @@
 import subprocess
 from esys.finley import ReadGmsh
 from esys.weipa import saveSilo
-from esys.escript import makeTagMap, ReducedFunction
+from esys.escript import getRegionTags, ReducedFunction
 from fingal import readElectrodeLocations
 import numpy as np
 

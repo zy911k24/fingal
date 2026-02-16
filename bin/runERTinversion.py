@@ -166,10 +166,10 @@ if hasattr(config, "sigma0_dump") and config.sigma0_dump:
     sigma.dump(config.sigma0_dump)
     logger.info(f"Sigma0 was dumped to {config.sigma0_dump}.")
 if args.vtk:
-    saveVTK(config.outfile, sigma=sigma, tag=makeTagMap(Function(domain)))
+    saveVTK(config.outfile, sigma=sigma, tag=getRegionTags(Function(domain)))
     logger.info(f"Result written to {config.outfile}.vtu.")
 else:
-    saveSilo(config.outfile, sigma=sigma, tag=makeTagMap(Function(domain)))
+    saveSilo(config.outfile, sigma=sigma, tag=getRegionTags(Function(domain)))
     logger.info(f"Result written to {config.outfile}.silo.")
 
 if args.xyz:

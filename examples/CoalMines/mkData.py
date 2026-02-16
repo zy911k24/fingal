@@ -82,6 +82,6 @@ f.close()
 u101=primary_potentials[schedule.getStationNumber(101)]+secondary_potentials[schedule.getStationNumber(101)]
 u146=primary_potentials[schedule.getStationNumber(146)]+secondary_potentials[schedule.getStationNumber(146)]
 u123=primary_potentials[schedule.getStationNumber(123)]+secondary_potentials[schedule.getStationNumber(123)]
-saveSilo("setup", sigma=1/rho, u=u101-u146, u101=u101, u146=u146, u123=u123, damage=damage, tag=makeTagMap(Function(domain)))
+saveSilo("setup", sigma=1/rho, u=u101-u146, u101=u101, u146=u146, u123=u123, damage=damage, tag=getRegionTags(Function(domain)))
 
 

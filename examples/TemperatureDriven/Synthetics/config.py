@@ -33,44 +33,45 @@ schedulefile = 'schedule.csv'
 surfacetemperature_file = "surface_temperature.csv"
 surfacetemperature_undef = -9999
 surfacetemperature_skiprows = 1
-
 #
 #  This section of the file defines the inversion
 #
-
-region_fixed=[]
-sigma_ref=1.52e-4
-Mn_ref=5.054e-5
 #def true_properties(domain):
 #    from esys.escript import Scalar, Function
 #    sigma_true=Scalar(sigma_ref, Function(domain))
 #    Mn_true=Scalar(Mn_ref, Function(domain))
 #    return sigma_true, Mn_true
 #
+pde_tol = 1e-10
+use_log_misfit_DC=False
+data_rtol = 1e-4
+use_log_misfit_IP = False
+regularization_weighting_DC_misfit = 1
+clip_property_function = 10
 #
 #  Inversion:
 #
-weighting_misfit_ERT=0.5
-clip_property_function=10
 m_tolerance=1.e-3
 g_tolerance=1.e-4
 interpolation_order=3
 imax=400
 truncation=20
 restart=60
-pde_tol=1e-10
-
-useL1Norm=False
-epsilonL1Norm=1e-4
-
-w1=1
-useLogMisfitERT = False # True
-useLogMisfitIP = False #  True
 #
 # Output handeling:
 #
 outfile='sigma'
-#   tag(s) for face elements (excluding top surface)
 restartfile = 'restart'
 
+thermal_conductivity = 2
+background_heat_production = 0
+background_heat_production_core = 0
+background_heat_surface_flux_bottom = 0
+background_heat_surface_flux_top = 0
 
+# regularization:
+# scale only relevant model = FLUX
+model = "TEMP" #(|| "FLUX")
+regularization_w1DC = 1e-3
+useTemperatureExtrapolation = True
+temperature_variation_factor = 1000

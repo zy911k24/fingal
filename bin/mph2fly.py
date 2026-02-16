@@ -3,7 +3,6 @@
 #  This is a simple COMSOL MPH to escript fly file converter
 #
 import os, sys
-from fingal import makeTagMap
 from esys.finley import ReadMesh 
 from esys.weipa import saveSilo
 from esys.escript import ReducedFunction
@@ -200,7 +199,7 @@ if args.points:
 
 if args.silofile is not None:
     mesh=ReadMesh(args.fly)
-    saveSilo(args.silofile,tags=makeTagMap(ReducedFunction(mesh)))
+    saveSilo(args.silofile,tags=getRegionTags(ReducedFunction(mesh)))
     print(args.silofile+".silo with tags has been generated.")
 
 if args.points:

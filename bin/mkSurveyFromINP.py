@@ -9,7 +9,7 @@ from fingal import *
 from datetime import datetime
 import subprocess
 from esys.finley import ReadGmsh
-from esys.escript import Function, makeTagMap
+from esys.escript import Function, getRegionTags
 from esys.weipa import saveSilo
 sys.path.append(os.getcwd())
 # sys.path.append(os.getcwd())
@@ -240,7 +240,7 @@ for i, s in enumerate(electrodes_id):
 domain = ReadGmsh(MSHN3, 3, diracPoints=dps, diracTags=dts, optimize=True)
 domain.write(args.flyfile)
 print("Mesh written to file %s" % (args.flyfile))
-saveSilo(silofile, tags=makeTagMap(Function(domain)))
+saveSilo(silofile, tags=getRegionTags(Function(domain)))
 print("Mesh written to silo file %s.silo" % silofile)
 
 # data records:

@@ -2,7 +2,7 @@
 import subprocess
 from esys.finley import ReadGmsh
 from esys.weipa import saveSilo
-from esys.escript import makeTagMap, ReducedFunction
+from esys.escript import getRegionTags, ReducedFunction
 from fingal import readElectrodeLocations
 
 
@@ -34,5 +34,5 @@ domain.write(FLYFILE)
 print(f"mesh file {FLYFILE} was created.")
 
 if SILOFILE:
-    saveSilo(SILOFILE, tag=makeTagMap(ReducedFunction(domain)))
+    saveSilo(SILOFILE, tag=getRegionTags(ReducedFunction(domain)))
     print(f'Mesh written to file {SILOFILE}.silo.')

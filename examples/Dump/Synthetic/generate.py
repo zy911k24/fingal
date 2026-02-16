@@ -172,7 +172,7 @@ if args.mkConfig:
 
 if args.mkMesh:
     import subprocess
-    from esys.escript import Function, makeTagMap
+    from esys.escript import Function, getRegionTags
     from esys.finley import ReadGmsh
     from esys.weipa import saveSilo
     # now we are ready to generate the 3D mesh:
@@ -190,5 +190,5 @@ if args.mkMesh:
     print("Gmsh msh file read from %s" % gmshfile)
     domain.write(meshfile)
     print("Mesh written to file %s" % meshfile)
-    saveSilo(silofile, tags=makeTagMap(Function(domain)))
+    saveSilo(silofile, tags=getRegionTags(Function(domain)))
     print("Mesh written to silo file %s.silo" % silofile)

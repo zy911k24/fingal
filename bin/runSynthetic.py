@@ -86,7 +86,7 @@ else:
 if args.silofile:
     M_n.expand()
     sigma_0.expand()
-    kwargs = { "Mn" : M_n, "sigma0" : sigma_0, "tag" : makeTagMap(Function(domain)) }
+    kwargs = { "Mn" : M_n, "sigma0" : sigma_0, "tag" : getRegionTags(Function(domain)) }
     saveSilo(args.silofile , **kwargs)
     print(f'values {kwargs.keys()} written to file {args.silofile}.')
 
@@ -108,7 +108,7 @@ runner.write(config.datafile , datacolumns = config.datacolumns, addNoise = args
                             iFMT="%d", dFMT="%.5g", xFMT="%e")
 # -----------------------------------------------------------------------------------
 if args.silofile:
-    kwargs = { "Mn" : M_n, "sigma0" : sigma_0, "tag" : makeTagMap(Function(domain)) }
+    kwargs = { "Mn" : M_n, "sigma0" : sigma_0, "tag" : getRegionTags(Function(domain)) }
     A=list(elocations.keys())[0]
     iA=schedule.getStationNumber(A)
     kwargs[f'VS_s{A}'] = runner.source_potential[iA]
