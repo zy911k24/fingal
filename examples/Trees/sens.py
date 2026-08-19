@@ -135,34 +135,3 @@ s_ABMN = sigma_a / F_ABMN * interpolate(inner(grad(UAB, Function(self.domain)), 
 s_ABMN_max = Lsup(s_ABMN)
 print(stations, " -> sigma_a = ", sigma_a, "; s = ", s_ABMN_max)
 
-
-1/0
-
-#=====================
-# lets try some anisotropy
-X= Function(domain).getX()
-angle = atan2(X[1], X[0])
-# anisotopy factors
-a_z = 1.
-a_phi = 1.
-###
-sigma_phi = a_pi * SIGMA_BG
-sigma_r   =        SIGMA_BG
-
-A = pde.getCoefficients("A")
-A[0,0] = sigma_phi * cos(angle)**2 + sigma_r * sin(angle)**2
-A[0,1] = ( sigma_r - sigma_phi) * sin(angle) * cos(angle)
-A[0,2] = 0
-A[1,0] = A[0,1]
-A[1,1] = sigma_phi * sin(angle)**2 + sigma_r * cos(angle)**2
-A[1,2] = 0
-A[2,0] = 0
-A[2,1] = 0
-A[2,2] = 1
-pde.setValue(A = A )
-
-
-print(angle)
-saveSilo("result", angle = angle)
-
-

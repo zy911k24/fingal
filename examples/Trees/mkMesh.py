@@ -1,18 +1,23 @@
 #!/usr/bin/python3
 import math
+TreeDiameter = 0.5
+MeshFF=1.0
+#TreeDiameter = 1.0
+#MeshFF=0.8
+#TreeDiameter = 2.0
+MeshFF=0.6
 
-TreeDiameter = 0.500
 NumElectrodesPerRing = 48
 NumberOfRings = 1
 DistanceOfRings = 3.14 * TreeDiameter /NumElectrodesPerRing
 RadIncrement = math.pi *2 /NumElectrodesPerRing
 
-CoreThickness = 0.5
-Padding = 1.0
+CoreThickness = TreeDiameter
+Padding = TreeDiameter *5
 
-MeshSizeCore = math.pi * TreeDiameter/60 *0.5
-MeshSizePadding = math.pi * TreeDiameter/30 *0.5
-MeshSizeElectrodes = RadIncrement * TreeDiameter/20
+MeshSizeCore = RadIncrement * TreeDiameter /4 *MeshFF
+MeshSizePadding = RadIncrement * TreeDiameter *MeshFF
+MeshSizeElectrodes = RadIncrement * TreeDiameter /10 * MeshFF
 
 
 RadOffset = RadIncrement/2
@@ -25,7 +30,7 @@ electrodes = {}
 # point generation:
 R = TreeDiameter/2
 FirstRing = - DistanceOfRings * (NumberOfRings - 1) /2
-SEGMENTS = {1 : 15, 2 : 12, 3: 13, 4: 14}
+SEGMENTS = {1 : 205, 2 : 204, 3: 203, 4: 206}
 GEOPOINTS =""
 for i in range(NumberOfRings):
     z = (FirstRing + i * DistanceOfRings)
@@ -57,10 +62,11 @@ with open("stations.csv", 'w') as f:
 
 if True:
     import subprocess
-    rp=subprocess.run(["gmsh", "-3", "-optimize_netgen", "-o","tree.msh", "tree.geo"])
-
+    #rp=subprocess.run(["gmsh", "-3", "-optimize_netgen", "-o","tree.msh", "tree.geo"])
+    rp = subprocess.run(["gmsh", "-3", "-o", "tree.msh", "tree.geo"])
     dts = [f"s{s:03d}" for s in electrodes.keys()]
     dps = [electrodes[s] for s in electrodes.keys()]
     from esys.finley import ReadGmsh
     domain = ReadGmsh("tree.msh", 3, diracPoints=dps, diracTags=dts, optimize=True)
     domain.write("tree.fly")
+    print("fly file created. Have a nice day!")
