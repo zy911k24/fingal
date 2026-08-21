@@ -19,10 +19,18 @@ MeshSizeCore = RadIncrement * TreeDiameter /4 *MeshFF
 MeshSizePadding = RadIncrement * TreeDiameter *MeshFF
 MeshSizeElectrodes = RadIncrement * TreeDiameter /10 * MeshFF
 
+# refinement around the tree axis, so the pith regularisation radius R0 is resolved:
+# AxisRefineRadius is the radius of the fine zone, MeshSizeAxis the size within it.
+AxisRefineRadius = TreeDiameter/50
+MeshSizeAxis = MeshSizeCore/5
+
 
 RadOffset = RadIncrement/2
 
-TEMPLATE_FILE="./treegeo.tpl"
+# cartesian (x,y,z) template: the electrode points below are cartesian and are
+# placed "In Surface {203..206}", which only exist in the xyz template.
+# treegeocyl.tpl is the cylindrical (r,t,z) box used by the obsolete mkMeshCyl.py.
+TEMPLATE_FILE="./treegeoxyz.tpl"
 
 assert DistanceOfRings * (NumberOfRings+2) < CoreThickness
 
@@ -51,6 +59,8 @@ geometry = open(TEMPLATE_FILE, 'r').read().format(TreeDiameter =  TreeDiameter,
                                                   MeshSizeCore = MeshSizeCore,
                                                   MeshSizePadding = MeshSizePadding,
                                                   MeshSizeElectrodes = MeshSizeElectrodes,
+                                                  MeshSizeAxis = MeshSizeAxis,
+                                                  AxisRefineRadius = AxisRefineRadius,
                                                   ELECTRODES = GEOPOINTS)
 with open("tree.geo", 'w') as f:
     f.write(geometry)

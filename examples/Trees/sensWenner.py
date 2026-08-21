@@ -1,7 +1,5 @@
 #!/usr/bin/python3
-from cmath import sin
 import os
-from tkinter import Scale
 
 import numpy as np
 
@@ -17,8 +15,14 @@ SIGMA_Z = 1e-3
 SIGMA_R = 5e-4
 SIGMA_T = 2e-4
 #SIGMA_R, SIGMA_Z = SIGMA_T, SIGMA_T
+# pith radius. the fibre direction e_r is undefined at r=0, so the anisotropy is
+# blended to isotropic (SIGMA_T) inside R0. without this the conductivity tensor is
+# discontinuous on the axis and the solution has a r**sqrt(SIGMA_T/SIGMA_R) cusp there
+# that no mesh can resolve. R0 needs a few elements across it: see AxisRefineRadius
+# and MeshSizeAxis in mkMesh.py, which refine the mesh along the axis for this.
+R0 = 0.01
 DIR = "output"
-SILO = "resultIsoSmall"
+SILO = "resultAnisoSmallXYZ_R0"
 # -----------------
 mkDir(DIR)
 def makeWennerArrayOnRing(numElectrodes=48, id0=1, amax=None):
@@ -54,6 +58,15 @@ for i, x,y,z in electrodes:
 NumElectrodesPerRing = len(X)
 print(f"{len(X)} electrodes read.")
 
+# this is the cartesian (x,y,z) formulation: stations.csv and tree.fly must come from
+# mkMesh.py. guard against a stale cylindrical (r,t,z) pair, which would otherwise be
+# read as x-y without complaint and quietly produce nonsense.
+radius = np.hypot(*np.array([X[s][:2] for s in Xenum]).T)
+assert np.ptp(radius) < 0.01 * radius.mean(), (
+    f"stations.csv is not a ring in the x-y plane (radius {radius.min():g}..{radius.max():g}) "
+    "- these look like cylindrical (r,t,z) coordinates. rerun mkMesh.py.")
+print(f"station ring radius = {radius.mean():g}")
+
 schedule = makeWennerArrayOnRing(NumElectrodesPerRing)
 print("Wenner schedule created.")
 
@@ -86,13 +99,15 @@ print(f"SIGMA_T = {SIGMA_T}")
 print(f"SIGMA_Z = {SIGMA_Z}")
 A=pde.getCoefficient('A')
 x= A.getX()
-l = clip(length(x[:2]), minval = 1e-30)
-e = x[:2]/l
-A[0,0] = SIGMA_R * e[0]**2 + SIGMA_T * e[1]**2
+# softened radial direction: |e| = r/sqrt(r**2+R0**2), so |e| -> 0 on the axis and the
+# in-plane tensor SIGMA_T*I + (SIGMA_R-SIGMA_T)*e><e becomes isotropic there instead of
+# discontinuous. for r >> R0 this is the same unit vector as before.
+e = x[:2]/sqrt(x[0]**2 + x[1]**2 + R0**2)
+A[0,0] = SIGMA_T + ( SIGMA_R - SIGMA_T) * e[0]**2
 A[0,1] = ( SIGMA_R - SIGMA_T) * e[1] * e[0]
 A[0,2] = 0
 A[1,0] = A[0,1]
-A[1,1] = SIGMA_R * e[1]**2 + SIGMA_T * e[0]**2
+A[1,1] = SIGMA_T + ( SIGMA_R - SIGMA_T) * e[1]**2
 A[1,2] = 0
 A[2,0] = 0
 A[2,1] = 0
@@ -125,8 +140,7 @@ s_r= Scalar(0, ReducedFunction(domain))
 s_z= Scalar(0, ReducedFunction(domain))
 
 x= s_t.getX()
-l = clip(length(x[:2]), minval = 1e-30)
-e = x[:2]/l
+e = x[:2]/sqrt(x[0]**2 + x[1]**2 + R0**2)
 
 step = 0
 cc = 0
@@ -149,8 +163,13 @@ for iA, iB, iM, iN in schedule:
     sigma_ABMN = f_geo/F_ABMN
     g_AB = grad(uAB, e.getFunctionSpace())
     g_MN = grad(uMN, e.getFunctionSpace())
-    s_ABMN_r = sigma_ABMN / F_ABMN * (e[0] *  g_AB[0] + e[1] * g_AB[1]) * (e[0] *  g_MN[0] + e[1] * g_MN[1])
-    s_ABMN_t = sigma_ABMN / F_ABMN * (e[0] *  g_AB[1] - e[1] * g_AB[0]) * (e[0] *  g_MN[1] - e[1] * g_MN[0])
+    # dA/d_sigma_r = e><e and dA/d_sigma_t = I - e><e for the softened e, so the
+    # tangential kernel is the in-plane product minus the radial one. (the previous
+    # form (e0*g1-e1*g0) is the tangential component only while |e| = 1.)
+    er_AB = e[0] * g_AB[0] + e[1] * g_AB[1]
+    er_MN = e[0] * g_MN[0] + e[1] * g_MN[1]
+    s_ABMN_r = sigma_ABMN / F_ABMN * er_AB * er_MN
+    s_ABMN_t = sigma_ABMN / F_ABMN * ( g_AB[0] * g_MN[0] + g_AB[1] * g_MN[1] - er_AB * er_MN)
     s_ABMN_z = sigma_ABMN / F_ABMN * g_AB[2] * g_MN[2]
     print(A, B, M, N, "geo =", f_geo, "sigma_a =", sigma_ABMN)
     print("\t\t","s_ABMN_r max = ", Lsup(s_ABMN_r), "s_ABMN_t max = ", Lsup(s_ABMN_t),"s_ABMN_z max = ", Lsup(s_ABMN_z))
@@ -160,7 +179,5 @@ for iA, iB, iM, iN in schedule:
     cc+=1
 
 #saveSilo(os.path.join(DIR, f"s_{step:03d}"), s_r=s_r, s_t=s_t, s_z=s_z)
-v=Vector(0, e.getFunctionSpace())
-v[:2]=e
-saveSilo(SILO, s_r=s_r, s_t=s_t, s_z=s_z, v=v)
+saveSilo(SILO, s_r=s_r, s_t=s_t, s_z=s_z)
 print("sensity written to "+SILO)

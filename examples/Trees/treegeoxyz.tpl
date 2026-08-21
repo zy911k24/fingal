@@ -144,6 +144,31 @@ Volume(301) = {{301}};
 Surface Loop(302) = {{307, 308, 301, 306, 305, 301}};
 Volume(302) = {{302}};
 
+//--------------------------------
+// local refinement along the tree axis (the pith).
+// the fibre direction e_r is undefined at r=0, so the anisotropic conductivity
+// tensor rotates by 2*Pi across any element touching the axis. grade the mesh down
+// to MeshSizeAxis inside AxisRefineRadius so that a pith regularisation radius R0
+// of that order is actually resolved. Line(207) is the axis segment through the core.
+// SizeMax is MeshSizePadding, the coarsest size already in the model: gmsh combines
+// the background field with the point sizes by taking the minimum, so the field can
+// only ever refine near the axis and never coarsens or refines anything else.
+MeshSizeAxis = {MeshSizeAxis};
+AxisRefineRadius = {AxisRefineRadius};
+
+Field[1] = Distance;
+Field[1].CurvesList = {{207}};
+Field[1].Sampling = 400;
+
+Field[2] = Threshold;
+Field[2].InField = 1;
+Field[2].SizeMin = MeshSizeAxis;
+Field[2].SizeMax = MeshSizePadding;
+Field[2].DistMin = AxisRefineRadius;
+Field[2].DistMax = TreeDiameter/2;
+
+Background Field = 2;
+
 {ELECTRODES}
 
 Physical Volume("Core", 60) = {{201, 202}};
